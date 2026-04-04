@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>استعراض التقويم المدرسي - مدرسة زمزم</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="js/data.js"></script>
+    <style>
+        body { font-family: 'Tajawal', sans-serif; }
+        .doc-card-completed { background: linear-gradient(135deg, #f0fdf4, #dcfce7); }
+        .doc-card-inprogress { background: linear-gradient(135deg, #fffbeb, #fef3c7); }
+        .doc-card-pending   { background: #f8fafc; }
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(16px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+        .fade-in { animation: fadeInUp 0.4s ease-out both; }
+    </style>
+</head>
+<body class="bg-slate-50 antialiased min-h-screen text-right pb-16">
+    <div id="root"></div>
+
+    <script type="text/babel">
+    const { useState, useMemo } = React;
+
+    /* ── Icons ──────────────────────────────────────────────── */
+    const Ico = ({ d, size = 20, cls = '' }) => (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" strokeWidth="2" strokeLinecap="round"
+             strokeLinejoin="round" className={cls}>{d}</svg>
+    );
+    const IcoCheck    = p => <Ico {...p} d={<><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></>}/>;
+    const IcoClock    = p => <Ico {...p} d={<><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></>}/>;
+    const IcoCircle   = p => <Ico {...p} d={<circle cx="12" cy="12" r="10"/>}/>;
+    const IcoExt      = p => <Ico {...p} d={<><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></>}/>;
+    const IcoSearch   = p => <Ico {...p} d={<><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></>}/>;
+    const IcoFile     = p => <Ico {...p} d={<><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></>}/>;
+    const IcoChevDown = p => <Ico {...p} d={<polyline points="6 9 12 15 18 9"/>}/>;
+    const IcoChevUp   = p => <Ico {...p} d={<polyline points="18 15 12 9 6 15"/>}/>;
+    const IcoHome     = p => <Ico {...p} d={<><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></>}/>;
+
+    /* ── Helpers ─────────────────────────────────────────────── */
+    const loadLocalStorage = (key) => {
+        try { const s = localStorage.getItem(key); return s ? JSON.parse(s) : {}; }
+        catch { return {}; }
+    };
+
+    const statusConfig = {
+        completed: { label: 'مجهزة',   bg: 'bg-emerald-100', text: 'text-emerald-700', Icon: IcoCheck  },
+        pending:   { label: 'لم تبدأ', bg: 'bg-slate-100',   text: 'text-slate-500',   Icon: IcoCircle },
+    };
+
+    /* ── Main Component ──────────────────────────────────────── */
+    const VisitorApp = () => {
+        const docStatus = loadLocalStorage('school_doc_status_v3');
+        const docLinks  = loadLocalStorage('school_doc_links_v3');
+
+        const [selectedDomain, setSelectedDomain] = useState(window.schoolData[0]?.name || '');
+        const [search, setSearch]                 = useState('');
+        const [expanded, setExpanded]             = useState({});
+
+        /* Flatten */
+        const flatData = useMemo(() => {
+            const r = [];
+            window.schoolData.forEach((dom, dIdx) =>
+                dom.standards.forEach((std, sIdx) =>
+                    std.indicators.forEach((ind, iIdx) =>
+                        r.push({ ...ind, domain: dom.name, standard: std.name,
+                                 dIdx, sIdx, iIdx, key: `${dIdx}-${sIdx}-${iIdx}` })
+                    )
+                )
+            );
+            return r;
+        }, []);
+
+        /* Stats per domain */
+        const domainStats = useMemo(() => {
+            const map = {};
+            window.schoolData.forEach(dom => {
+                const inds = flatData.filter(i => i.domain === dom.name);
+                const total = inds.reduce((a, i) => a + i.documents.length, 0);
+                const done  = inds.reduce((a, i) =>
+                    a + i.documents.filter((_, dIdx) => docStatus[`${i.key}-${dIdx}`] === 'completed').length, 0);
+                map[dom.name] = { total, done, pct: total ? Math.round(done/total*100) : 0 };
+            });
+            return map;
+        }, [flatData, docStatus]);
+
+        /* Global stats */
+        const globalStats = useMemo(() => {
+            const totalDocs   = flatData.reduce((a, i) => a + i.documents.length, 0);
+            const completedDocs = flatData.reduce((a, i) =>
+                a + i.documents.filter((_, dIdx) => docStatus[`${i.key}-${dIdx}`] === 'completed').length, 0);
+            return { totalDocs, completedDocs, pct: totalDocs ? Math.round(completedDocs/totalDocs*100) : 0 };
+        }, [flatData, docStatus]);
+
+        /* Filter */
+        const filteredStandards = useMemo(() => {
+            const domInds = flatData.filter(i => i.domain === selectedDomain);
+            const searched = domInds.filter(i =>
+                !search || i.text.includes(search) || i.number.includes(search) ||
+                i.standard.includes(search) || i.documents.some(d => d.includes(search))
+            );
+            const grouped = {};
+            searched.forEach(i => { if (!grouped[i.standard]) grouped[i.standard] = []; grouped[i.standard].push(i); });
+            return grouped;
+        }, [flatData, selectedDomain, search]);
+
+        const toggle = (key) => setExpanded(p => ({ ...p, [key]: !p[key] }));
+
+        return (
+            <div className="min-h-screen bg-slate-50 text-right">
+
+                {/* ── Hero Header ──────────────────────────── */}
+                <header className="bg-gradient-to-bl from-blue-700 via-blue-600 to-indigo-700 text-white py-12 px-4 relative overflow-hidden">
+                    <div className="absolute inset-0 opacity-10"
+                         style={{ backgroundImage: 'radial-gradient(circle at 20% 50%, white 1px, transparent 1px), radial-gradient(circle at 80% 20%, white 1px, transparent 1px)',
+                                  backgroundSize: '60px 60px' }} />
+                    <div className="max-w-5xl mx-auto relative z-10">
+                        <div className="flex items-center justify-between mb-8 flex-wrap gap-4">
+                            <div>
+                                <p className="text-blue-200 text-sm font-bold mb-1">مدرسة زمزم الابتدائية · 1447 هـ</p>
+                                <h1 className="text-3xl sm:text-4xl font-black">استعراض التقويم المدرسي</h1>
+                                <p className="text-blue-200 mt-2 text-sm">عرض المجالات والمعايير والوثائق المطلوبة</p>
+                            </div>
+                            <a href="index.html"
+                               className="flex items-center gap-2 bg-white/15 hover:bg-white/25 px-5 py-3 rounded-2xl font-bold text-sm transition-all backdrop-blur-sm border border-white/20">
+                                <IcoHome size={16}/> لوحة المتابعة
+                            </a>
+                        </div>
+
+                        {/* Global progress */}
+                        <div className="bg-white/10 backdrop-blur-sm rounded-3xl p-5 border border-white/20">
+                            <div className="flex justify-between items-center mb-3">
+                                <span className="font-bold text-sm opacity-80">نسبة الإنجاز الكلية</span>
+                                <span className="font-black text-2xl">{globalStats.pct}%
+                                    <span className="text-blue-200 font-medium text-base"> ({globalStats.completedDocs}/{globalStats.totalDocs})</span>
+                                </span>
+                            </div>
+                            <div className="w-full h-3 bg-white/20 rounded-full overflow-hidden">
+                                <div className="h-full bg-white rounded-full transition-all duration-1000"
+                                     style={{ width: `${globalStats.pct}%` }} />
+                            </div>
+                        </div>
+                    </div>
+                </header>
+
+                <main className="max-w-5xl mx-auto px-4 py-8">
+
+                    {/* ── Domain Cards ─────────────────────── */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
+                        {window.schoolData.map(dom => {
+                            const s = domainStats[dom.name] || {};
+                            const active = selectedDomain === dom.name;
+                            return (
+                                <button key={dom.name} onClick={() => setSelectedDomain(dom.name)}
+                                    className={`p-4 rounded-2xl text-right transition-all border-2 ${
+                                        active ? 'bg-blue-600 border-blue-600 text-white shadow-lg shadow-blue-200'
+                                               : 'bg-white border-slate-100 text-slate-700 hover:border-blue-200 hover:shadow-sm'
+                                    }`}>
+                                    <p className={`text-xs font-bold mb-1 ${active ? 'text-blue-100' : 'text-slate-400'}`}>{s.done}/{s.total}</p>
+                                    <p className="font-black text-sm leading-snug">{dom.name}</p>
+                                    <div className={`mt-2 h-1.5 rounded-full overflow-hidden ${active ? 'bg-white/25' : 'bg-slate-100'}`}>
+                                        <div className={`h-full rounded-full transition-all ${active ? 'bg-white' : s.pct===100 ? 'bg-emerald-400' : 'bg-blue-400'}`}
+                                             style={{ width: `${s.pct}%` }} />
+                                    </div>
+                                </button>
+                            );
+                        })}
+                    </div>
+
+                    {/* ── Search ───────────────────────────── */}
+                    <div className="relative mb-8">
+                        <IcoSearch size={18} cls="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <input type="text" placeholder="ابحث في المؤشرات والوثائق..."
+                            className="w-full pr-12 pl-5 py-4 rounded-2xl bg-white border border-slate-200 shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                            value={search} onChange={e => setSearch(e.target.value)} />
+                    </div>
+
+                    {/* ── Standards & Indicators ───────────── */}
+                    <div className="space-y-10">
+                        {Object.entries(filteredStandards).map(([std, indicators]) => (
+                            <section key={std} className="fade-in">
+                                <div className="flex items-center gap-3 mb-5">
+                                    <div className="w-1 h-7 bg-blue-600 rounded-full" />
+                                    <h2 className="text-xl font-black text-slate-800">{std}</h2>
+                                    <span className="text-xs text-slate-400 bg-slate-100 px-2.5 py-1 rounded-lg">{indicators.length} مؤشر</span>
+                                </div>
+
+                                <div className="space-y-4">
+                                    {indicators.map(ind => {
+                                        const isOpen = !!expanded[ind.key];
+                                        const totalDocs = ind.documents.length;
+                                        const doneDocs  = ind.documents.filter((_, dIdx) => docStatus[`${ind.key}-${dIdx}`] === 'completed').length;
+                                        const pct = totalDocs ? Math.round(doneDocs/totalDocs*100) : 0;
+
+                                        return (
+                                            <div key={ind.key}
+                                                 className={`bg-white rounded-[1.5rem] border-2 transition-all duration-300 overflow-hidden ${
+                                                    isOpen ? 'border-blue-400 shadow-lg' : 'border-slate-100 hover:border-slate-200 shadow-sm'}`}>
+
+                                                {/* Header */}
+                                                <button className="w-full text-right p-5 sm:p-6"
+                                                        onClick={() => toggle(ind.key)}>
+                                                    <div className="flex justify-between items-start gap-4">
+                                                        <div className="flex-1">
+                                                            <div className="flex items-center gap-2 mb-2 flex-wrap">
+                                                                <span className="text-xs font-mono text-slate-400 bg-slate-50 px-2.5 py-1 rounded-lg border border-slate-100">{ind.number}</span>
+                                                                <span className={`text-xs font-bold px-2.5 py-1 rounded-lg ${
+                                                                    pct === 100 ? 'bg-emerald-50 text-emerald-700'
+                                                                    : pct > 0   ? 'bg-blue-50 text-blue-700'
+                                                                    : 'bg-slate-100 text-slate-500'
+                                                                }`}>{doneDocs}/{totalDocs} وثائق</span>
+                                                            </div>
+                                                            <p className="font-bold text-slate-700 leading-relaxed text-sm sm:text-base">{ind.text}</p>
+                                                        </div>
+                                                        <div className="shrink-0 text-slate-400 mt-1">
+                                                            {isOpen ? <IcoChevUp size={18}/> : <IcoChevDown size={18}/>}
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Progress */}
+                                                    <div className="mt-4 w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                                        <div className={`h-full rounded-full transition-all duration-700 ${pct===100 ? 'bg-emerald-500' : 'bg-blue-500'}`}
+                                                             style={{ width: `${pct}%` }} />
+                                                    </div>
+                                                </button>
+
+                                                {/* Documents */}
+                                                {isOpen && (
+                                                    <div className="border-t border-slate-100 bg-slate-50/60 px-5 sm:px-6 py-5">
+                                                        {ind.responsible && (
+                                                            <p className="text-xs text-slate-400 font-medium mb-4 pb-4 border-b border-slate-100">
+                                                                <span className="font-bold text-slate-500">المسؤول: </span>{ind.responsible}
+                                                            </p>
+                                                        )}
+
+                                                        <div className="flex items-center gap-2 mb-4">
+                                                            <IcoFile size={14} cls="text-slate-400" />
+                                                            <span className="text-xs font-bold text-slate-400">الوثائق المطلوبة ({totalDocs})</span>
+                                                        </div>
+
+                                                        {totalDocs === 0 ? (
+                                                            <p className="text-sm text-slate-400 italic">لا توجد وثائق محددة لهذا المؤشر</p>
+                                                        ) : (
+                                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                                                                {ind.documents.map((doc, dIdx) => {
+                                                                    const docKey = `${ind.key}-${dIdx}`;
+                                                                    const st     = docStatus[docKey] || 'pending';
+                                                                    const link   = docLinks[docKey];
+                                                                    const cfg    = statusConfig[st] || statusConfig.pending;
+                                                                    return (
+                                                                        <div key={docKey}
+                                                                             className={`flex items-center justify-between gap-3 p-3.5 rounded-xl border transition-all ${
+                                                                                st==='completed' ? 'doc-card-completed border-emerald-200'
+                                                                                : 'doc-card-pending border-slate-200'
+                                                                             }`}>
+                                                                            <div className="flex items-start gap-2.5 flex-1 min-w-0">
+                                                                                <cfg.Icon size={16} cls={`shrink-0 mt-0.5 ${cfg.text}`} />
+                                                                                <span className={`text-sm leading-relaxed text-slate-700 font-medium`}>
+                                                                                    {doc}
+                                                                                </span>
+                                                                            </div>
+                                                                            <div className="flex items-center gap-2 shrink-0">
+                                                                                <span className={`text-xs font-bold px-2 py-1 rounded-lg ${cfg.bg} ${cfg.text}`}>
+                                                                                    {cfg.label}
+                                                                                </span>
+                                                                                {link && (
+                                                                                    <a href={link} target="_blank" rel="noreferrer"
+                                                                                       className="flex items-center gap-1 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 px-3 py-1.5 rounded-lg transition-colors"
+                                                                                       title="فتح الوثيقة">
+                                                                                        <IcoExt size={12}/> عرض
+                                                                                    </a>
+                                                                                )}
+                                                                            </div>
+                                                                        </div>
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </section>
+                        ))}
+
+                        {Object.keys(filteredStandards).length === 0 && (
+                            <div className="text-center py-20 text-slate-400">
+                                <IcoSearch size={48} cls="mx-auto mb-4 text-slate-200" />
+                                <p className="text-lg font-bold">لا توجد نتائج مطابقة</p>
+                            </div>
+                        )}
+                    </div>
+                </main>
+
+                <footer className="text-center text-xs text-slate-400 pb-6 mt-12">
+                    مدرسة زمزم الأهلية &copy; 1447 هـ &mdash; نظام التقويم المدرسي
+                </footer>
+            </div>
+        );
+    };
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<VisitorApp />);
+    </script>
+</body>
+</html>
